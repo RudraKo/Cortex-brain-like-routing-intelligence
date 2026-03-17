@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LLM Router Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&display=swap"
+        rel="stylesheet" />
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #000000;
+            --fg: #ffffff;
+            --border: #333333;
+            --dim: #666666;
+            --user-bg: #ffffff;
+            --user-fg: #000000;
+            --bot-bg: #0a0a0a;
+            --tag-bg: #111111;
+        }
+
+        html,
+        body {
+            height: 100%;
+            background: var(--bg);
+        }
+
+        body {
+            font-family: 'IBM Plex Mono', 'Courier New', monospace;
+            color: var(--fg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        /* ── App shell ─────────────────────────────────────────────────────────── */
+        .app {
+            width: 100%;
+            max-width: 820px;
+            height: 92vh;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            image-rendering: pixelated;
+        }
+
+        /* ── Header ─────────────────────────────────────────────────────────────── */
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            gap: 12px;
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        header h1 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        header p {
+            font-size: 0.65rem;
+            color: var(--dim);
+            letter-spacing: 0.06em;
+        }
+
+        .status {
+            font-size: 0.65rem;
+            color: var(--dim);
+            letter-spacing: 0.08em;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: var(--fg);
+            animation: blink-sq 1.2s step-end infinite;
+        }
+
+        @keyframes blink-sq {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0;
+            }
+        }
+
+        /* ── Messages ──────────────────────────────────────────────────────────── */
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            scroll-behavior: smooth;
+        }
+
+        .messages::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .messages::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+
+        .messages::-webkit-scrollbar-thumb {
+            background: var(--border);
+        }
+
+        /* ── Empty state ─────────────────────────────────────────────────────── */
+        .empty-state {
+            margin: auto;
+            text-align: center;
+        }
+
+        .empty-state pre {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--dim);
+            line-height: 1.3;
+            margin-bottom: 18px;
+            white-space: pre;
+        }
+
+        .empty-state h2 {
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .empty-state p {
+            font-size: 0.7rem;
+            color: var(--dim);
+            line-height: 1.8;
+            max-width: 340px;
+            margin: 0 auto;
+        }
+
+        /* ── Message rows ──────────────────────────────────────────────────────── */
+        .msg-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            animation: appear 0.15s ease;
+        }
+
+        @keyframes appear {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .msg-row.user {
+            align-items: flex-end;
+        }
+
+        .msg-row.bot {
+            align-items: flex-start;
+        }
+
+        /* Label above each bubble */
+        .msg-label {
+            font-size: 0.6rem;
+            color: var(--dim);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        /* Bubble */
+        .bubble {
+            max-width: 78%;
+            padding: 12px 16px;
+            font-size: 0.82rem;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .bubble.user {
+            background: var(--user-bg);
+            color: var(--user-fg);
+            border: 1px solid var(--fg);
+        }
+
+        .bubble.bot {
+            background: var(--bot-bg);
+            color: var(--fg);
+            border: 1px dashed var(--border);
+        }
+
+        /* ── Meta tags strip ─────────────────────────────────────────────────── */
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-width: 78%;
+        }
+
+        .tag {
+            font-size: 0.6rem;
+            padding: 3px 7px;
+            background: var(--tag-bg);
+            border: 1px solid var(--border);
+            color: var(--dim);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .tag.hi {
+            color: var(--fg);
+            border-color: var(--fg);
+        }
+
+        /* ── Typing indicator ────────────────────────────────────────────────── */
+        .typing-bubble {
+            background: var(--bot-bg);
+            border: 1px dashed var(--border);
+            padding: 12px 16px;
+            font-size: 0.82rem;
+            color: var(--dim);
+        }
+
+        .cursor-blink {
+            display: inline-block;
+            animation: blink-cur 0.8s step-end infinite;
+        }
+
+        @keyframes blink-cur {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0;
+            }
+        }
+
+        /* ── Input area ──────────────────────────────────────────────────────── */
+        footer {
+            border-top: 1px solid var(--border);
+        }
+
+        /* Prompt line indicator */
+        .prompt-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 0;
+        }
+
+        .prompt-prefix {
+            padding: 14px 14px 14px 20px;
+            font-size: 0.82rem;
+            color: var(--dim);
+            white-space: nowrap;
+            flex-shrink: 0;
+            user-select: none;
+        }
+
+        #prompt {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--fg);
+            font-family: 'IBM Plex Mono', 'Courier New', monospace;
+            font-size: 0.82rem;
+            resize: none;
+            max-height: 120px;
+            line-height: 1.7;
+            padding: 14px 0;
+        }
+
+        #prompt::placeholder {
+            color: var(--border);
+        }
+
+        #send-btn {
+            background: var(--fg);
+            color: var(--bg);
+            border: none;
+            padding: 14px 22px;
+            font-family: 'IBM Plex Mono', 'Courier New', monospace;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: opacity 0.15s;
+            flex-shrink: 0;
+            align-self: stretch;
+        }
+
+        #send-btn:hover {
+            opacity: 0.85;
+        }
+
+        #send-btn:active {
+            opacity: 0.65;
+        }
+
+        #send-btn:disabled {
+            opacity: 0.25;
+            cursor: not-allowed;
+        }
+
+        .hint {
+            padding: 6px 20px 10px;
+            font-size: 0.6rem;
+            color: var(--border);
+            letter-spacing: 0.06em;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="app">
+
+        <!-- Header -->
+        <header>
+            <div class="header-left">
+                <h1>LLM Router Terminal</h1>
+                <p>Groq API / Intelligent model routing / v1.0</p>
+            </div>
+            <div class="status">ONLINE</div>
+        </header>
+
+        <!-- Messages -->
+        <div class="messages" id="messages">
+            <div class="empty-state" id="empty-state">
+                <pre>
+  ____          __
+ / __ \___  ___/ /____ ____
+/ /_/ / _ \/ _  // -_)/ __/
+\____/\___/\_,_/ \__//_/
+      </pre>
+                <h2>Ready for input</h2>
+                <p>Type a prompt below. Simple queries route to the fast 8B model. Complex code and reasoning escalate
+                    to the heavy 70B model.</p>
+            </div>
+        </div>
+
+        <!-- Input -->
+        <footer>
+            <div class="prompt-row">
+                <span class="prompt-prefix">&gt;_</span>
+                <textarea id="prompt" rows="1" placeholder="enter prompt..."></textarea>
+                <button id="send-btn">Send</button>
+            </div>
+            <p class="hint">[ Enter ] to send &nbsp;&nbsp; [ Shift + Enter ] for new line</p>
+        </footer>
+
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api/chat/';
+        const messagesEl = document.getElementById('messages');
+        const promptEl = document.getElementById('prompt');
+        const sendBtn = document.getElementById('send-btn');
+
+        // Auto-grow textarea
+        promptEl.addEventListener('input', () => {
+            promptEl.style.height = 'auto';
+            promptEl.style.height = Math.min(promptEl.scrollHeight, 120) + 'px';
+        });
+
+        promptEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        });
+        sendBtn.addEventListener('click', sendMessage);
+
+        function scrollBottom() {
+            messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+        }
+
+        function removeEmpty() {
+            const el = document.getElementById('empty-state');
+            if (el) el.remove();
+        }
+
+        function modelLabel(m) {
+            if (m.includes('8b')) return '8B FAST';
+            if (m.includes('70b') && m.includes('3.1')) return '70B MED';
+            if (m.includes('70b')) return '70B HEAVY';
+            return m.toUpperCase();
+        }
+
+        function esc(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function appendUser(text) {
+            removeEmpty();
+            const row = document.createElement('div');
+            row.className = 'msg-row user';
+            row.innerHTML = `
+      <span class="msg-label">You</span>
+      <div class="bubble user">${esc(text)}</div>`;
+            messagesEl.appendChild(row);
+            scrollBottom();
+        }
+
+        function appendTyping() {
+            const row = document.createElement('div');
+            row.className = 'msg-row bot';
+            row.id = 'typing';
+            row.innerHTML = `
+      <span class="msg-label">Router</span>
+      <div class="typing-bubble">Processing<span class="cursor-blink">_</span></div>`;
+            messagesEl.appendChild(row);
+            scrollBottom();
+            return row;
+        }
+
+        function appendBot(data) {
+            const row = document.createElement('div');
+            row.className = 'msg-row bot';
+
+            const cachedTag = data.from_cache ? `<span class="tag hi">Cached</span>` : '';
+            const retriedTag = data.retried ? `<span class="tag hi">Retried</span>` : '';
+
+            row.innerHTML = `
+      <span class="msg-label">Router</span>
+      <div class="bubble bot">${esc(data.response)}</div>
+      <div class="meta">
+        <span class="tag hi">${modelLabel(data.model)}</span>
+        <span class="tag">${data.task_type.toUpperCase()}</span>
+        <span class="tag">Score ${data.complexity_score}</span>
+        <span class="tag">${data.total_tokens} tokens</span>
+        <span class="tag">${data.latency_sec.toFixed(2)}s</span>
+        ${cachedTag}${retriedTag}
+      </div>`;
+            messagesEl.appendChild(row);
+            scrollBottom();
+        }
+
+        function appendError(msg) {
+            const row = document.createElement('div');
+            row.className = 'msg-row bot';
+            row.innerHTML = `
+      <span class="msg-label">Error</span>
+      <div class="bubble bot" style="border-color:#fff; color:#fff;">[ERR] ${esc(msg)}</div>`;
+            messagesEl.appendChild(row);
+            scrollBottom();
+        }
+
+        async function sendMessage() {
+            const prompt = promptEl.value.trim();
+            if (!prompt) return;
+
+            promptEl.value = '';
+            promptEl.style.height = 'auto';
+            sendBtn.disabled = true;
+            appendUser(prompt);
+            const typingRow = appendTyping();
+
+            try {
+                const res = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
+                });
+                typingRow.remove();
+                if (!res.ok) {
+                    const err = await res.json();
+                    appendError(err.detail || 'Unexpected error.');
+                } else {
+                    appendBot(await res.json());
+                }
+            } catch (e) {
+                typingRow.remove();
+                appendError('Cannot reach backend. Run: uvicorn app.main:app --reload --port 8000');
+            } finally {
+                sendBtn.disabled = false;
+                promptEl.focus();
+            }
+        }
+    </script>
+
+</body>
+
+</html>
