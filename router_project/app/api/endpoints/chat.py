@@ -34,10 +34,7 @@ async def create_chat_completion(request: ChatRequest, db: Session = Depends(get
         return ChatResponse(**result)
 
     except Exception as e:
-        import traceback
-        trace_str = traceback.format_exc()
-        # include traceback in the 500 error for debugging Vercel
-        raise HTTPException(status_code=500, detail=f"{repr(e)} | Trace: {trace_str}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/stats")
