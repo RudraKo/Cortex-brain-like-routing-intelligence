@@ -1,6 +1,7 @@
 import os
 import time
-from groq import Groq
+from functools import lru_cache
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,7 +12,12 @@ GROQ_API_KEY = _raw_key.strip() if _raw_key else None
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY environment variable not set")
 
-client = Groq(api_key=GROQ_API_KEY)
+
+@lru_cache(maxsize=1)
+def _get_client():
+    from groq import Groq
+
+    return Groq(api_key=GROQ_API_KEY)
 
 def generate_completion(prompt: str, model: str, system_message: str = None):
     """
@@ -25,6 +31,7 @@ def generate_completion(prompt: str, model: str, system_message: str = None):
         messages.append({"role": "system", "content": system_message})
     messages.append({"role": "user", "content": prompt})
 
+    client = _get_client()
     chat_completion = client.chat.completions.create(
         messages=messages,
         model=model,

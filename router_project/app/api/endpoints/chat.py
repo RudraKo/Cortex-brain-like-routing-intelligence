@@ -1,15 +1,49 @@
-from fastapi import APIRouter, Depends, HTTPException
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case
-from app.schemas.chat import ChatRequest, ChatResponse
-from app.services.llm_router import route_request
+
 from app.db.database import get_db
-from app.db.models import RequestLog
+from app.db.models import LearnerProgress, RequestLog
+from app.schemas.chat import ChatRequest, ChatResponse
+from app.schemas.practice import (
+    LearnerProgressResponse,
+    LearnerProgressUpdateRequest,
+    PromptAnalysisRequest,
+    PromptAnalysisResponse,
+    PromptTestRequest,
+    PromptTestResponse,
+)
+from app.services.llm_router import route_request
+from app.services.prompt_practice import (
+    analyze_prompt_quality,
+    calculate_completion,
+    get_full_course_curriculum,
+    get_learning_modules,
+    progress_from_json,
+    progress_to_json,
+    run_prompt_test,
+)
 
 router = APIRouter()
+WRITE_API_KEY = (os.getenv("PROMPT_STUDIO_WRITE_API_KEY") or "").strip()
+
+
+def _require_write_access(x_api_key: str | None = Header(default=None)):
+    """Optional lightweight auth: enforced only when PROMPT_STUDIO_WRITE_API_KEY is configured."""
+    if not WRITE_API_KEY:
+        return
+    if x_api_key != WRITE_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
 
 @router.post("/", response_model=ChatResponse)
-async def create_chat_completion(request: ChatRequest, db: Session = Depends(get_db)):
+async def create_chat_completion(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    _: None = Depends(_require_write_access),
+):
     try:
         result = route_request(request.prompt)
 
@@ -34,10 +68,7 @@ async def create_chat_completion(request: ChatRequest, db: Session = Depends(get
         return ChatResponse(**result)
 
     except Exception as e:
-        import traceback
-        trace_str = traceback.format_exc()
-        # include traceback in the 500 error for debugging Vercel
-        raise HTTPException(status_code=500, detail=f"{repr(e)} | Trace: {trace_str}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/stats")
@@ -45,9 +76,9 @@ async def get_stats(db: Session = Depends(get_db)):
     """
     Returns per-model aggregate stats: total requests, avg latency, avg tokens.
     """
-    retried_expr = func.sum(
-        case((RequestLog.retried == True, 1), else_=0)
-    ).label("total_retries")
+    retried_expr = func.sum(case((RequestLog.retried == True, 1), else_=0)).label(
+        "total_retries"
+    )
 
     rows = (
         db.query(
@@ -76,3 +107,93 @@ async def get_stats(db: Session = Depends(get_db)):
         }
         for r in rows
     ]
+
+
+@router.get("/practice/modules")
+async def practice_modules():
+    return get_learning_modules()
+
+
+@router.get("/practice/course")
+async def practice_course():
+    return get_full_course_curriculum()
+
+
+@router.post("/practice/analyze", response_model=PromptAnalysisResponse)
+async def practice_analyze(
+    request: PromptAnalysisRequest,
+    _: None = Depends(_require_write_access),
+):
+    try:
+        analyzed = analyze_prompt_quality(request.prompt, request.goal)
+        return PromptAnalysisResponse(**analyzed)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/practice/test", response_model=PromptTestResponse)
+async def practice_test(
+    request: PromptTestRequest,
+    _: None = Depends(_require_write_access),
+):
+    try:
+        tested = run_prompt_test(request.scenario, request.prompts)
+        return PromptTestResponse(**tested)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/progress/{learner_id}", response_model=LearnerProgressResponse)
+async def get_progress(learner_id: str, db: Session = Depends(get_db)):
+    progress = db.query(LearnerProgress).filter(LearnerProgress.learner_id == learner_id).first()
+    completed_lessons = progress_from_json(progress.completed_lessons_json if progress else None)
+    total_lessons, completed_count, completion_pct = calculate_completion(completed_lessons)
+    active_level = progress.active_level if progress else None
+
+    return LearnerProgressResponse(
+        learner_id=learner_id,
+        completed_lessons=completed_lessons,
+        active_level=active_level,
+        total_lessons=total_lessons,
+        completed_count=completed_count,
+        completion_pct=completion_pct,
+    )
+
+
+@router.put("/progress/{learner_id}", response_model=LearnerProgressResponse)
+async def put_progress(
+    learner_id: str,
+    request: LearnerProgressUpdateRequest,
+    db: Session = Depends(get_db),
+    _: None = Depends(_require_write_access),
+):
+    all_levels = {level["id"] for level in get_full_course_curriculum()["levels"]}
+    active_level = request.active_level if request.active_level in all_levels else None
+    completed_lessons = request.completed_lessons
+    total_lessons, completed_count, completion_pct = calculate_completion(completed_lessons)
+
+    row = db.query(LearnerProgress).filter(LearnerProgress.learner_id == learner_id).first()
+    if row is None:
+        row = LearnerProgress(
+            learner_id=learner_id,
+            completed_lessons_json=progress_to_json(completed_lessons),
+            active_level=active_level,
+            completion_pct=completion_pct,
+        )
+        db.add(row)
+    else:
+        row.completed_lessons_json = progress_to_json(completed_lessons)
+        row.active_level = active_level
+        row.completion_pct = completion_pct
+
+    db.commit()
+    db.refresh(row)
+
+    return LearnerProgressResponse(
+        learner_id=learner_id,
+        completed_lessons=progress_from_json(row.completed_lessons_json),
+        active_level=row.active_level,
+        total_lessons=total_lessons,
+        completed_count=completed_count,
+        completion_pct=row.completion_pct,
+    )

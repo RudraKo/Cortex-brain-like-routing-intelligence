@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -25,3 +25,14 @@ class RequestLog(Base):
     total_tokens = Column(Integer)
     retried = Column(Boolean, default=False)
     from_cache = Column(Boolean, default=False)
+
+
+class LearnerProgress(Base):
+    __tablename__ = "learner_progress"
+
+    id = Column(Integer, primary_key=True, index=True)
+    learner_id = Column(String, unique=True, index=True, nullable=False)
+    completed_lessons_json = Column(Text, default="[]")
+    active_level = Column(String, nullable=True)
+    completion_pct = Column(Float, default=0.0)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
