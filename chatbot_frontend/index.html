@@ -588,18 +588,18 @@
 
   <script>
     const LOCAL_API_URL_HINT = "http://localhost:8000/api/chat/";
-    const PROD_API_FALLBACK = "https://cortex-brain-like-routing-intellige.vercel.app";
     const runtimeApiBase = window.__PROMPT_STUDIO_API_BASE__ || "";
     const derivedApiBase = (window.location.protocol === "file:" || !window.location.host)
       ? "http://localhost:8000"
       : ((window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
         ? "http://localhost:8000"
         : window.location.origin);
-    let API_BASE_URL = (runtimeApiBase || derivedApiBase).replace(/\/$/, "");
-
-    function apiUrl(path) {
-      return `${API_BASE_URL}${path}`;
-    }
+    const API_BASE_URL = (runtimeApiBase || derivedApiBase).replace(/\/$/, "");
+    const CHAT_API_URL = `${API_BASE_URL}/api/chat/`;
+    const MODULES_API_URL = `${API_BASE_URL}/api/chat/practice/modules`;
+    const COURSE_API_URL = `${API_BASE_URL}/api/chat/practice/course`;
+    const ANALYZE_API_URL = `${API_BASE_URL}/api/chat/practice/analyze`;
+    const TEST_API_URL = `${API_BASE_URL}/api/chat/practice/test`;
 
     const tokenCounterEl = document.getElementById("token-counter");
     const activeModeEl = document.getElementById("active-mode");
@@ -777,7 +777,7 @@
       appendMessage("user", prompt);
 
       try {
-        const res = await fetch(apiUrl("/api/chat/"), {
+        const res = await fetch(CHAT_API_URL, {
           method: "POST",
           headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ prompt })
@@ -812,7 +812,7 @@
       analysisEl.textContent = "Analyzing prompt...";
 
       try {
-        const res = await fetch(apiUrl("/api/chat/practice/analyze"), {
+        const res = await fetch(ANALYZE_API_URL, {
           method: "POST",
           headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ prompt, goal: goalEl.value.trim() || null })
@@ -857,7 +857,7 @@
       labResultsEl.innerHTML = "<div class='card'><p class='hint'>Running prompt test...</p></div>";
 
       try {
-        const res = await fetch(apiUrl("/api/chat/practice/test"), {
+        const res = await fetch(TEST_API_URL, {
           method: "POST",
           headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ scenario, prompts })
@@ -1008,33 +1008,6 @@
       renderProgressBanner();
     }
 
-    async function ensureApiBase() {
-      if (runtimeApiBase) {
-        return;
-      }
-      try {
-        const sameOriginProbe = await fetch(apiUrl("/api/chat/practice/course"), { method: "GET" });
-        if (sameOriginProbe.ok) {
-          return;
-        }
-      } catch (error) {
-        // Ignore and try fallback.
-      }
-
-      if (API_BASE_URL !== PROD_API_FALLBACK) {
-        try {
-          const fallbackProbe = await fetch(`${PROD_API_FALLBACK}/api/chat/practice/course`, {
-            method: "GET",
-          });
-          if (fallbackProbe.ok) {
-            API_BASE_URL = PROD_API_FALLBACK;
-          }
-        } catch (error) {
-          // Keep existing base if fallback fails.
-        }
-      }
-    }
-
     async function saveProgress() {
       try {
         const response = await fetch(progressEndpoint(), {
@@ -1057,15 +1030,14 @@
 
     async function loadCourse() {
       try {
-        await ensureApiBase();
         await loadProgress();
-        const courseRes = await fetch(apiUrl("/api/chat/practice/course"));
+        const courseRes = await fetch(COURSE_API_URL);
         if (!courseRes.ok) throw new Error("course endpoint unavailable");
         const course = await courseRes.json();
         renderCourse(course);
       } catch (courseError) {
         try {
-          const moduleRes = await fetch(apiUrl("/api/chat/practice/modules"));
+          const moduleRes = await fetch(MODULES_API_URL);
           if (!moduleRes.ok) throw new Error("modules endpoint unavailable");
           const modules = await moduleRes.json();
           renderCourse(fallbackCourse);
