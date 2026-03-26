@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 
 from app.db.database import get_db
-from app.db.models import Base, LearnerProgress, RequestLog
+from app.db.models import Base, RequestLog
 from app.main import app
 
 
@@ -41,7 +41,6 @@ class TestChatApiIntegration(unittest.TestCase):
 
     def setUp(self):
         with self.SessionLocal() as db:
-            db.query(LearnerProgress).delete()
             db.query(RequestLog).delete()
             db.commit()
 
@@ -169,30 +168,6 @@ class TestChatApiIntegration(unittest.TestCase):
         self.assertEqual(factual["total_requests"], 1)
         self.assertEqual(factual["total_tokens_used"], 11)
         self.assertEqual(factual["total_retries"], 0)
-
-    def test_progress_endpoints_store_and_return_completion(self):
-        learner_id = "learner-demo-001"
-
-        get_res = self.client.get(f"/api/chat/progress/{learner_id}")
-        self.assertEqual(get_res.status_code, 200)
-        self.assertEqual(get_res.json()["completed_count"], 0)
-
-        put_payload = {
-            "completed_lessons": ["l1m1-1", "l1m1-2", "invalid-lesson-id"],
-            "active_level": "level-1",
-        }
-        put_res = self.client.put(f"/api/chat/progress/{learner_id}", json=put_payload)
-        self.assertEqual(put_res.status_code, 200)
-        body = put_res.json()
-        self.assertEqual(body["learner_id"], learner_id)
-        self.assertEqual(body["active_level"], "level-1")
-        self.assertEqual(body["completed_lessons"], ["l1m1-1", "l1m1-2"])
-        self.assertEqual(body["completed_count"], 2)
-        self.assertGreater(body["completion_pct"], 0.0)
-
-        get_again = self.client.get(f"/api/chat/progress/{learner_id}")
-        self.assertEqual(get_again.status_code, 200)
-        self.assertEqual(get_again.json()["completed_lessons"], ["l1m1-1", "l1m1-2"])
 
 
 if __name__ == "__main__":
